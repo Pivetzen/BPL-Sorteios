@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escolha seus Números</title>
+    <style>
+        :root {
+            --livre: #4ade80;
+            --indisponivel: #f87171;
+            --text-dark: #1e293b;
+            --primary: #2563eb;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        body { background-color: #f8fafc; color: var(--text-dark); padding: 20px; }
+        .container { max-width: 750px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        h1 { margin-bottom: 5px; text-align: center; font-size: 1.8rem; }
+        .sub-rifa { text-align: center; color: #64748b; font-weight: bold; margin-bottom: 20px; font-size: 1rem; }
+        .btn-voltar { display: inline-block; margin-bottom: 15px; color: var(--primary); text-decoration: none; font-weight: bold; }
+        
+        /* Legenda Simplificada */
+        .legenda { display: flex; justify-content: center; gap: 20px; margin-bottom: 25px; font-size: 0.95rem; }
+        .legenda-item { display: flex; align-items: center; gap: 8px; }
+        .box-cor { width: 20px; height: 20px; border-radius: 4px; }
+        
+        /* Grid Travado em 10 por linha */
+        .grid-numeros { 
+            display: grid; 
+            grid-template-columns: repeat(10, 1fr); 
+            gap: 8px; 
+            margin-bottom: 25px; 
+        }
+        .numero-card { 
+            aspect-ratio: 1 / 1; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-weight: bold; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            border: 1px solid rgba(0,0,0,0.05); 
+            user-select: none; 
+            font-size: 0.9rem; 
+            transition: transform 0.1s; 
+        }
+        .numero-card:active { transform: scale(0.92); }
+        
+        /* Classes de Status */
+        .status-livre { background-color: var(--livre); color: #064e3b; }
+        .status-indisponivel { background-color: var(--indisponivel); color: #7f1d1d; cursor: not-allowed; }
+        
+        #loading { text-align: center; font-weight: bold; margin: 20px 0; color: #64748b; }
+
+        /* Estilos do Modal de Confirmação */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); justify-content: center; align-items: center; z-index: 1000; padding: 15px; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; max-width: 400px; width: 100%; text-align: center; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2); }
+        .modal-text { font-size: 1.1rem; margin-bottom: 20px; font-weight: 500; }
+        .modal-btn-whats { display: block; background: #25d366; color: white; text-decoration: none; padding: 12px; border-radius: 8px; font-weight: bold; margin-bottom: 10px; transition: background 0.2s; }
+        .modal-btn-whats:hover { background: #128c7e; }
+        .modal-btn-fechar { display: block; color: #64748b; text-decoration: none; font-size: 0.9rem; }
+
+        @media (max-width: 480px) {
+            .numero-card { font-size: 0.72rem; border-radius: 4px; }
+            .grid-numeros { gap: 4px; }
+            body { padding: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <a href="index.html" id="btnVoltar" class="btn-voltar">⬅ Voltar para Informações</a>
+    <h1>Escolha seus Números</h1>
+    <div class="sub-rifa" id="nomeRifaHeader"></div>
+
+    <div class="legenda">
+        <div class="legenda-item"><div class="box-cor" style="background-color: var(--livre)"></div> Livre</div>
+        <div class="legenda-item"><div class="box-cor" style="background-color: var(--indisponivel)"></div> Indisponível</div>
+    </div>
+
+    <div id="loading">Carregando cartela...</div>
+    <div class="grid-numeros" id="gridNumeros"></div>
+</div>
+
+<!-- Estrutura do Modal do WhatsApp -->
+<div class="modal-overlay" id="whatsappModal">
+    <div class="modal-content">
+        <div class="modal-text" id="modalMensagem">O número X está disponível!</div>
+        <a href="#" target="_blank" class="modal-btn-whats" id="btnLinkWhats">Entre em contato por WhatsApp<br>clicando aqui!</a>
+        <a href="#" class="modal-btn-fechar" onclick="fecharModal(event)">Escolher outro número</a>
+    </div>
+</div>
+
+<script>
+    // ⚠️ COLE AQUI OS LINKS CSV DAS DUAS ABAS DA PLANILHA
+    const URL_PLANILHA_RIFAS = 'COLE_AQUI_O_LINK_CSV_DA_ABA_RIFAS';
+    const URL_PLANILHA_NUMEROS = 'COLE_AQUI_O_LINK_CSV_DA_ABA_NUMEROS';
+
+    let rifaAtual = {
+        id: '',
+        titulo: 'Rifa',
+        total_pontos: 100,
+        whatsapp: '5585986000477'
+    };
+
+    function parseCSVLine(text, separator) {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === separator && !inQuotes) {
+                result.push(current.trim());
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        result.push(current.trim());
+        return result;
+    }
+
+    async function carregarCartela() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const rifaId = urlParams.get('rifa');
+
+        if (!rifaId) {
+            window.location.href = 'index.html';
+            return;
+        }
+
+        document.getElementById('btnVoltar').href = `index.html?rifa=${encodeURIComponent(rifaId)}`;
+
+        try {
+            // Busca as duas abas simultaneamente
+            const timestamp = new Date().getTime();
+            const [resRifas, resNumeros] = await Promise.all([
+                fetch(`${URL_PLANILHA_RIFAS}&t=${timestamp}`),
+                fetch(`${URL_PLANILHA_NUMEROS}&t=${timestamp}`)
+            ]);
+
+            const csvRifas = await resRifas.text();
+            const csvNumeros = await resNumeros.text();
+
+            // 1. Localiza as configurações da rifa selecionada
+            const linhasRifas = csvRifas.split(/\r?\n/).filter(l => l.trim() !== '');
+            const sepRifas = csvRifas.includes(';') ? ';' : ',';
+            let encontrouRifa = false;
+
+            for (let i = 1; i < linhasRifas.length; i++) {
+                const cols = parseCSVLine(linhasRifas[i], sepRifas);
+                if (cols[0] === rifaId && (cols[1] || '').toUpperCase() === 'SIM') {
+                    rifaAtual = {
+                        id: cols[0],
+                        titulo: cols[2] || 'Rifa',
+                        premio: cols[4] || '',
+                        total_pontos: parseInt(cols[10], 10) || 100,
+                        whatsapp: (cols[11] || '').replace(/\D/g, '')
+                    };
+                    encontrouRifa = true;
+                    break;
+                }
+            }
+
+            if (!encontrouRifa) {
+                document.getElementById('loading').innerHTML = "<span style='color:#ef4444;'>Esta rifa não está ativa ou não foi encontrada.</span>";
+                return;
+            }
+
+            document.getElementById('nomeRifaHeader').innerText = `${rifaAtual.titulo} (${rifaAtual.premio})`;
+
+            // 2. Mapeia os números indisponíveis APENAS desta rifa
+            const numerosIndisponiveis = new Set();
+            const linhasNumeros = csvNumeros.split(/\r?\n/).filter(l => l.trim() !== '');
+            const sepNumeros = csvNumeros.includes(';') ? ';' : ',';
+
+            for (let i = 1; i < linhasNumeros.length; i++) {
+                const cols = parseCSVLine(linhasNumeros[i], sepNumeros);
+                const idRifaLinha = cols[0];
+                const numLinha = parseInt(cols[1], 10);
+                const statusLinha = (cols[2] || '').toLowerCase();
+
+                if (idRifaLinha === rifaId && !isNaN(numLinha) && statusLinha !== 'livre') {
+                    numerosIndisponiveis.add(numLinha);
+                }
+            }
+
+            // 3. Renderiza o grid de 1 até total_pontos
+            document.getElementById('loading').style.display = 'none';
+            renderizarGrid(rifaAtual.total_pontos, numerosIndisponiveis);
+
+        } catch (error) {
+            console.error("Erro ao carregar dados:", error);
+            document.getElementById('loading').innerText = "Erro ao carregar os números da planilha.";
+        }
+    }
+
+    function renderizarGrid(totalPontos, indisponiveisSet) {
+        const grid = document.getElementById('gridNumeros');
+        grid.innerHTML = '';
+
+        // Define quantos dígitos mostrar (ex: 100 -> 3 dígitos "001", 50 -> 2 dígitos "01")
+        const digitos = String(totalPontos).length;
+
+        for (let n = 1; n <= totalPontos; n++) {
+            const numeroFormatado = String(n).padStart(digitos, '0');
+            const card = document.createElement('div');
+            card.classList.add('numero-card');
+
+            if (indisponiveisSet.has(n)) {
+                card.classList.add('status-indisponivel');
+                card.title = `Número ${numeroFormatado} indisponível`;
+            } else {
+                card.classList.add('status-livre');
+                card.title = `Número ${numeroFormatado} disponível`;
+                card.addEventListener('click', () => abrirModalWhats(numeroFormatado));
+            }
+
+            card.innerText = numeroFormatado;
+            grid.appendChild(card);
+        }
+    }
+
+    function abrirModalWhats(numeroFormatado) {
+        document.getElementById('modalMensagem').innerHTML = `O número <strong>${numeroFormatado}</strong> está disponível!`;
+        
+        const textoMensagem = encodeURIComponent(
+            `Olá! Quero comprar o número *${numeroFormatado}* da rifa *${rifaAtual.titulo}* (${rifaAtual.premio}).`
+        );
+        const urlWhats = `https://api.whatsapp.com/send?phone=${rifaAtual.whatsapp}&text=${textoMensagem}`;
+        
+        document.getElementById('btnLinkWhats').href = urlWhats;
+        document.getElementById('whatsappModal').style.display = 'flex';
+    }
+
+    function fecharModal(event) {
+        event.preventDefault();
+        document.getElementById('whatsappModal').style.display = 'none';
+    }
+
+    carregarCartela();
+</script>
+</body>
+</html>
