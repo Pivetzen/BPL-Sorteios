@@ -7,6 +7,7 @@
     <style>
         :root {
             --livre: #4ade80;
+            --reservado: #facc15;
             --indisponivel: #f87171;
             --text-dark: #1e293b;
             --primary: #2563eb;
@@ -18,10 +19,10 @@
         .sub-rifa { text-align: center; color: #64748b; font-weight: bold; margin-bottom: 20px; font-size: 1rem; }
         .btn-voltar { display: inline-block; margin-bottom: 15px; color: var(--primary); text-decoration: none; font-weight: bold; }
         
-        /* Legenda Simplificada */
-        .legenda { display: flex; justify-content: center; gap: 20px; margin-bottom: 25px; font-size: 0.95rem; }
-        .legenda-item { display: flex; align-items: center; gap: 8px; }
-        .box-cor { width: 20px; height: 20px; border-radius: 4px; }
+        /* Legenda com 3 status */
+        .legenda { display: flex; justify-content: center; flex-wrap: wrap; gap: 20px; margin-bottom: 25px; font-size: 0.95rem; }
+        .legenda-item { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+        .box-cor { width: 20px; height: 20px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.08); }
         
         /* Grid Travado em 10 por linha */
         .grid-numeros { 
@@ -41,12 +42,13 @@
             border: 1px solid rgba(0,0,0,0.05); 
             user-select: none; 
             font-size: 0.9rem; 
-            transition: transform 0.1s; 
+            transition: transform 0.1s, background-color 0.2s; 
         }
         .numero-card:active { transform: scale(0.92); }
         
         /* Classes de Status */
         .status-livre { background-color: var(--livre); color: #064e3b; }
+        .status-reservado { background-color: var(--reservado); color: #713f12; }
         .status-indisponivel { background-color: var(--indisponivel); color: #7f1d1d; cursor: not-allowed; }
         
         #loading { text-align: center; font-weight: bold; margin: 20px 0; color: #64748b; }
@@ -54,9 +56,12 @@
         /* Estilos do Modal de Confirmação */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); justify-content: center; align-items: center; z-index: 1000; padding: 15px; }
         .modal-content { background: white; padding: 25px; border-radius: 12px; max-width: 400px; width: 100%; text-align: center; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2); }
-        .modal-text { font-size: 1.1rem; margin-bottom: 20px; font-weight: 500; }
+        .modal-text { font-size: 1.1rem; margin-bottom: 12px; font-weight: 500; }
+        .modal-sub { font-size: 0.9rem; color: #713f12; background: #fef9c3; padding: 8px 12px; border-radius: 8px; margin-bottom: 18px; border: 1px solid #fde047; }
         .modal-btn-whats { display: block; background: #25d366; color: white; text-decoration: none; padding: 12px; border-radius: 8px; font-weight: bold; margin-bottom: 10px; transition: background 0.2s; }
         .modal-btn-whats:hover { background: #128c7e; }
+        .modal-btn-liberar { display: inline-block; color: #dc2626; text-decoration: none; font-size: 0.85rem; margin-bottom: 10px; font-weight: 600; }
+        .modal-btn-liberar:hover { text-decoration: underline; }
         .modal-btn-fechar { display: block; color: #64748b; text-decoration: none; font-size: 0.9rem; }
 
         @media (max-width: 480px) {
@@ -75,6 +80,7 @@
 
     <div class="legenda">
         <div class="legenda-item"><div class="box-cor" style="background-color: var(--livre)"></div> Livre</div>
+        <div class="legenda-item"><div class="box-cor" style="background-color: var(--reservado)"></div> Reservado (Aguardando Pgto)</div>
         <div class="legenda-item"><div class="box-cor" style="background-color: var(--indisponivel)"></div> Indisponível</div>
     </div>
 
@@ -85,8 +91,12 @@
 <!-- Estrutura do Modal do WhatsApp -->
 <div class="modal-overlay" id="whatsappModal">
     <div class="modal-content">
-        <div class="modal-text" id="modalMensagem">O número X está disponível!</div>
-        <a href="#" target="_blank" class="modal-btn-whats" id="btnLinkWhats">Entre em contato por WhatsApp<br>clicando aqui!</a>
+        <div class="modal-text" id="modalMensagem">Número <strong>X</strong> selecionado!</div>
+        <div class="modal-sub" id="modalAvisoReserva">
+            💛 Número reservado temporariamente até a confirmação do pagamento.
+        </div>
+        <a href="#" target="_blank" class="modal-btn-whats" id="btnLinkWhats">Confirmar reserva no WhatsApp<br>clicando aqui!</a>
+        <a href="#" class="modal-btn-liberar" id="btnLiberarReserva" onclick="liberarReservaAtual(event)">Cancelar reserva deste número</a>
         <a href="#" class="modal-btn-fechar" onclick="fecharModal(event)">Escolher outro número</a>
     </div>
 </div>
@@ -95,13 +105,21 @@
     const URL_PLANILHA_RIFAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=0&single=true&output=csv';[cite: 7]
     const URL_PLANILHA_NUMEROS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=1215078428&single=true&output=csv';[cite: 7]
 
+    // Tempo de validade da reserva temporária local (em horas)
+    const HORAS_RESERVA_LOCAL = 24;
+
     let rifaAtual = {
         id: '',
+        idNorm: '',
         titulo: 'Rifa',
         premio: '',
         total_pontos: 100,
         whatsapp: '5585986000477'
     };
+
+    let numeroSelecionadoAtual = null;
+    let reservasPlanilhaSet = new Set();
+    let indisponiveisPlanilhaSet = new Set();
 
     function parseCSVLine(text, separator) {
         const result = [];
@@ -124,6 +142,44 @@
 
     function normalizarId(valor) {
         return String(valor || '').replace(/^"|"$/g, '').trim().toLowerCase();
+    }
+
+    function getStorageKey(rifaIdNorm) {
+        return `rifa_reservas_temp_${rifaIdNorm}`;
+    }
+
+    function obterReservasLocais(rifaIdNorm) {
+        try {
+            const raw = localStorage.getItem(getStorageKey(rifaIdNorm));
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            const agora = Date.now();
+            const limiteMs = HORAS_RESERVA_LOCAL * 60 * 60 * 1000;
+            const validas = {};
+
+            for (const [num, timestamp] of Object.entries(parsed)) {
+                if (agora - Number(timestamp) < limiteMs) {
+                    validas[num] = Number(timestamp);
+                }
+            }
+
+            localStorage.setItem(getStorageKey(rifaIdNorm), JSON.stringify(validas));
+            return validas;
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function salvarReservaLocal(rifaIdNorm, numeroInt) {
+        const atuais = obterReservasLocais(rifaIdNorm);
+        atuais[String(numeroInt)] = Date.now();
+        localStorage.setItem(getStorageKey(rifaIdNorm), JSON.stringify(atuais));
+    }
+
+    function removerReservaLocal(rifaIdNorm, numeroInt) {
+        const atuais = obterReservasLocais(rifaIdNorm);
+        delete atuais[String(numeroInt)];
+        localStorage.setItem(getStorageKey(rifaIdNorm), JSON.stringify(atuais));
     }
 
     async function carregarCartela() {
@@ -160,6 +216,7 @@
                 if (normalizarId(cols[0]) === rifaId && (cols[1] || '').toUpperCase() === 'SIM') {
                     rifaAtual = {
                         id: cols[0],
+                        idNorm: rifaId,
                         titulo: cols[2] || 'Rifa',
                         premio: cols[4] || '',
                         total_pontos: parseInt(cols[10], 10) || 100,
@@ -177,7 +234,9 @@
 
             document.getElementById('nomeRifaHeader').innerText = `${rifaAtual.titulo} (${rifaAtual.premio})`;
 
-            const numerosIndisponiveis = new Set();
+            reservasPlanilhaSet = new Set();
+            indisponiveisPlanilhaSet = new Set();
+
             const linhasNumeros = csvNumeros.split(/\r?\n/).filter(l => l.trim() !== '');
             const sepNumeros = csvNumeros.includes(';') ? ';' : ',';
 
@@ -187,13 +246,17 @@
                 const numLinha = parseInt(cols[1], 10);
                 const statusLinha = (cols[2] || '').toLowerCase();
 
-                if (idRifaLinha === rifaId && !isNaN(numLinha) && statusLinha !== 'livre') {
-                    numerosIndisponiveis.add(numLinha);
+                if (idRifaLinha === rifaId && !isNaN(numLinha)) {
+                    if (statusLinha === 'reservado' || statusLinha === 'reservado temporario' || statusLinha === 'reservado temporário') {
+                        reservasPlanilhaSet.add(numLinha);
+                    } else if (statusLinha !== '' && statusLinha !== 'livre' && statusLinha !== 'disponivel' && statusLinha !== 'disponível') {
+                        indisponiveisPlanilhaSet.add(numLinha);
+                    }
                 }
             }
 
             document.getElementById('loading').style.display = 'none';
-            renderizarGrid(rifaAtual.total_pontos, numerosIndisponiveis);
+            renderizarGrid();
 
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
@@ -201,24 +264,32 @@
         }
     }
 
-    function renderizarGrid(totalPontos, indisponiveisSet) {
+    function renderizarGrid() {
         const grid = document.getElementById('gridNumeros');
         grid.innerHTML = '';
 
-        const digitos = String(totalPontos).length;
+        const reservasLocais = obterReservasLocais(rifaAtual.idNorm);
+        const digitos = String(rifaAtual.total_pontos).length;
 
-        for (let n = 1; n <= totalPontos; n++) {
+        for (let n = 1; n <= rifaAtual.total_pontos; n++) {
             const numeroFormatado = String(n).padStart(digitos, '0');
             const card = document.createElement('div');
             card.classList.add('numero-card');
 
-            if (indisponiveisSet.has(n)) {
+            const estaIndisponivel = indisponiveisPlanilhaSet.has(n);
+            const estaReservado = !estaIndisponivel && (reservasPlanilhaSet.has(n) || Boolean(reservasLocais[String(n)]));
+
+            if (estaIndisponivel) {
                 card.classList.add('status-indisponivel');
                 card.title = `Número ${numeroFormatado} indisponível`;
+            } else if (estaReservado) {
+                card.classList.add('status-reservado');
+                card.title = `Número ${numeroFormatado} reservado temporariamente`;
+                card.addEventListener('click', () => selecionarOuAbrirModal(n, numeroFormatado, true));
             } else {
                 card.classList.add('status-livre');
                 card.title = `Número ${numeroFormatado} disponível`;
-                card.addEventListener('click', () => abrirModalWhats(numeroFormatado));
+                card.addEventListener('click', () => selecionarOuAbrirModal(n, numeroFormatado, false));
             }
 
             card.innerText = numeroFormatado;
@@ -226,21 +297,49 @@
         }
     }
 
-    function abrirModalWhats(numeroFormatado) {
-        document.getElementById('modalMensagem').innerHTML = `O número <strong>${numeroFormatado}</strong> está disponível!`;
-        
+    function selecionarOuAbrirModal(numeroInt, numeroFormatado, jaReservado) {
+        numeroSelecionadoAtual = { numeroInt, numeroFormatado };
+
+        // Marca o quadrado como reservado temporário (amarelo) ao selecionar
+        if (!jaReservado) {
+            salvarReservaLocal(rifaAtual.idNorm, numeroInt);
+            renderizarGrid();
+        }
+
+        document.getElementById('modalMensagem').innerHTML = `Número <strong>${numeroFormatado}</strong> reservado!`;
+        document.getElementById('modalAvisoReserva').innerHTML = `💛 O número <strong>${numeroFormatado}</strong> ficou <strong>amarelo (reservado temporário)</strong> até a confirmação do pagamento.`;
+
         const textoMensagem = encodeURIComponent(
-            `Olá! Quero comprar o número *${numeroFormatado}* da rifa *${rifaAtual.titulo}* (${rifaAtual.premio}).`
+            `Olá! Reservei o número *${numeroFormatado}* da rifa *${rifaAtual.titulo}* (${rifaAtual.premio}) e quero confirmar o pagamento.`
         );
         const urlWhats = `https://api.whatsapp.com/send?phone=${rifaAtual.whatsapp}&text=${textoMensagem}`;
-        
+
         document.getElementById('btnLinkWhats').href = urlWhats;
+
+        // Exibe opção de cancelar reserva local apenas se não estiver bloqueado como "reservado" na planilha
+        const btnLiberar = document.getElementById('btnLiberarReserva');
+        if (reservasPlanilhaSet.has(numeroInt)) {
+            btnLiberar.style.display = 'none';
+        } else {
+            btnLiberar.style.display = 'inline-block';
+        }
+
         document.getElementById('whatsappModal').style.display = 'flex';
     }
 
-    function fecharModal(event) {
+    function liberarReservaAtual(event) {
         event.preventDefault();
+        if (!numeroSelecionadoAtual) return;
+
+        removerReservaLocal(rifaAtual.idNorm, numeroSelecionadoAtual.numeroInt);
+        fecharModal(event);
+        renderizarGrid();
+    }
+
+    function fecharModal(event) {
+        if (event) event.preventDefault();
         document.getElementById('whatsappModal').style.display = 'none';
+        numeroSelecionadoAtual = null;
     }
 
     carregarCartela();
