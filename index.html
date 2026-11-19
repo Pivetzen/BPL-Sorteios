@@ -125,15 +125,13 @@
             </ul>
         </div>
 
-        <a href="#" id="btnEscolherNumeros" class="btn-action">Escolher Números Disponíveis ➔</a>
+        <a href="numeros.html" id="btnEscolherNumeros" class="btn-action">Escolher Números Disponíveis ➔</a>
     </div>
 </div>
 
 <script>
-    // ⚠️ COLE AQUI O LINK CSV PUBLICADO DA ABA "Rifas"
-    const URL_PLANILHA_RIFAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=0&single=true&output=csv';
+    const URL_PLANILHA_RIFAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=0&single=true&output=csv';[cite: 6]
 
-    // Função robusta para ler linhas CSV mesmo com vírgulas dentro de aspas
     function parseCSVLine(text, separator) {
         const result = [];
         let current = '';
@@ -153,9 +151,14 @@
         return result;
     }
 
+    function normalizarId(valor) {
+        return String(valor || '').replace(/^"|"$/g, '').trim().toLowerCase();
+    }
+
     async function iniciar() {
         try {
-            const response = await fetch(`${URL_PLANILHA_RIFAS}&t=${new Date().getTime()}`);
+            const sepQuery = URL_PLANILHA_RIFAS.includes('?') ? '&' : '?';
+            const response = await fetch(`${URL_PLANILHA_RIFAS}${sepQuery}t=${new Date().getTime()}`);
             const csvText = await response.text();
             
             if (csvText.includes('<!doctype html>') || csvText.includes('<html')) {
@@ -168,13 +171,14 @@
             const rifasAtivas = [];
 
             for (let i = 1; i < linhas.length; i++) {
-                const cols = parseCSVLine(linhas[i], separador);
-                if (cols.length < 3) continue;
+                const cols = parseCSVLine(linhas[i], separador).map(c => c.replace(/^"|"$/g, '').trim());
+                if (cols.length < 3 || !cols[0]) continue;
 
                 const ativa = (cols[1] || '').toUpperCase();
                 if (ativa === 'SIM') {
                     rifasAtivas.push({
                         id: cols[0],
+                        idNormalizado: normalizarId(cols[0]),
                         titulo: cols[2],
                         subtitulo: cols[3],
                         premio: cols[4],
@@ -197,19 +201,21 @@
                 return;
             }
 
-            // Verifica se existe ?rifa=ID na URL
             const urlParams = new URLSearchParams(window.location.search);
-            const rifaIdParam = urlParams.get('rifa');
+            const rifaIdParam = normalizarId(urlParams.get('rifa'));
 
             if (rifaIdParam) {
-                const rifaEncontrada = rifasAtivas.find(r => r.id === rifaIdParam);
+                const rifaEncontrada = rifasAtivas.find(r => r.idNormalizado === rifaIdParam);
                 if (rifaEncontrada) {
                     exibirDetalhes(rifaEncontrada, rifasAtivas.length > 1);
+                    return;
+                } else {
+                    document.getElementById('loading').classList.remove('hidden');
+                    document.getElementById('loading').innerHTML = `<span style='color:#ef4444;'>Rifa "${urlParams.get('rifa')}" não encontrada ou inativa.</span>`;
                     return;
                 }
             }
 
-            // Se só existir 1 rifa ativa, abre ela direto. Se houver várias, mostra a vitrine.
             if (rifasAtivas.length === 1) {
                 exibirDetalhes(rifasAtivas[0], false);
             } else {
@@ -258,16 +264,17 @@
         document.getElementById('rifaSubtitulo').innerText = rifa.subtitulo;
         
         const imgCamp = document.getElementById('rifaImgCampanha');
+        imgCamp.style.display = '';
         imgCamp.src = rifa.img_campanha;
         imgCamp.onerror = () => imgCamp.style.display = 'none';
 
         const imgPrem = document.getElementById('rifaImgPremio');
+        imgPrem.style.display = '';
         imgPrem.src = rifa.img_premio;
         imgPrem.onerror = () => imgPrem.style.display = 'none';
 
         document.getElementById('rifaPremio').innerText = rifa.premio;
 
-        // Converte os separadores "|" em parágrafos HTML
         const descContainer = document.getElementById('rifaDescricao');
         descContainer.innerHTML = '';
         const paragrafos = (rifa.descricao || '').split('|');
@@ -283,8 +290,9 @@
         document.getElementById('rifaData').innerText = `📅 Sorteio: ${rifa.data_sorteio}`;
         document.getElementById('rifaTotalPontos').innerText = rifa.total_pontos;
 
-        // Passa o ID da rifa para a página de números
-        document.getElementById('btnEscolherNumeros').href = `numeros.html?rifa=${encodeURIComponent(rifa.id)}`;
+        const btnNumeros = document.getElementById('btnEscolherNumeros');
+        const destinoNumeros = `numeros.html?rifa=${encodeURIComponent(rifa.id)}`;
+        btnNumeros.setAttribute('href', destinoNumeros);
 
         document.getElementById('telaDetalhes').classList.remove('hidden');
     }
