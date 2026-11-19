@@ -92,13 +92,13 @@
 </div>
 
 <script>
-    // ⚠️ COLE AQUI OS LINKS CSV DAS DUAS ABAS DA PLANILHA
-    const URL_PLANILHA_RIFAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=0&single=true&output=csv';
-    const URL_PLANILHA_NUMEROS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=1215078428&single=true&output=csv';
+    const URL_PLANILHA_RIFAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=0&single=true&output=csv';[cite: 7]
+    const URL_PLANILHA_NUMEROS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=1215078428&single=true&output=csv';[cite: 7]
 
     let rifaAtual = {
         id: '',
         titulo: 'Rifa',
+        premio: '',
         total_pontos: 100,
         whatsapp: '5585986000477'
     };
@@ -122,36 +122,42 @@
         return result;
     }
 
+    function normalizarId(valor) {
+        return String(valor || '').replace(/^"|"$/g, '').trim().toLowerCase();
+    }
+
     async function carregarCartela() {
         const urlParams = new URLSearchParams(window.location.search);
-        const rifaId = urlParams.get('rifa');
+        const rifaIdRaw = urlParams.get('rifa');
+        const rifaId = normalizarId(rifaIdRaw);
 
         if (!rifaId) {
             window.location.href = 'index.html';
             return;
         }
 
-        document.getElementById('btnVoltar').href = `index.html?rifa=${encodeURIComponent(rifaId)}`;
+        document.getElementById('btnVoltar').setAttribute('href', `index.html?rifa=${encodeURIComponent(rifaIdRaw)}`);
 
         try {
-            // Busca as duas abas simultaneamente
             const timestamp = new Date().getTime();
+            const sepRifasQuery = URL_PLANILHA_RIFAS.includes('?') ? '&' : '?';
+            const sepNumQuery = URL_PLANILHA_NUMEROS.includes('?') ? '&' : '?';
+
             const [resRifas, resNumeros] = await Promise.all([
-                fetch(`${URL_PLANILHA_RIFAS}&t=${timestamp}`),
-                fetch(`${URL_PLANILHA_NUMEROS}&t=${timestamp}`)
+                fetch(`${URL_PLANILHA_RIFAS}${sepRifasQuery}t=${timestamp}`),
+                fetch(`${URL_PLANILHA_NUMEROS}${sepNumQuery}t=${timestamp}`)
             ]);
 
             const csvRifas = await resRifas.text();
             const csvNumeros = await resNumeros.text();
 
-            // 1. Localiza as configurações da rifa selecionada
             const linhasRifas = csvRifas.split(/\r?\n/).filter(l => l.trim() !== '');
             const sepRifas = csvRifas.includes(';') ? ';' : ',';
             let encontrouRifa = false;
 
             for (let i = 1; i < linhasRifas.length; i++) {
-                const cols = parseCSVLine(linhasRifas[i], sepRifas);
-                if (cols[0] === rifaId && (cols[1] || '').toUpperCase() === 'SIM') {
+                const cols = parseCSVLine(linhasRifas[i], sepRifas).map(c => c.replace(/^"|"$/g, '').trim());
+                if (normalizarId(cols[0]) === rifaId && (cols[1] || '').toUpperCase() === 'SIM') {
                     rifaAtual = {
                         id: cols[0],
                         titulo: cols[2] || 'Rifa',
@@ -171,14 +177,13 @@
 
             document.getElementById('nomeRifaHeader').innerText = `${rifaAtual.titulo} (${rifaAtual.premio})`;
 
-            // 2. Mapeia os números indisponíveis APENAS desta rifa
             const numerosIndisponiveis = new Set();
             const linhasNumeros = csvNumeros.split(/\r?\n/).filter(l => l.trim() !== '');
             const sepNumeros = csvNumeros.includes(';') ? ';' : ',';
 
             for (let i = 1; i < linhasNumeros.length; i++) {
-                const cols = parseCSVLine(linhasNumeros[i], sepNumeros);
-                const idRifaLinha = cols[0];
+                const cols = parseCSVLine(linhasNumeros[i], sepNumeros).map(c => c.replace(/^"|"$/g, '').trim());
+                const idRifaLinha = normalizarId(cols[0]);
                 const numLinha = parseInt(cols[1], 10);
                 const statusLinha = (cols[2] || '').toLowerCase();
 
@@ -187,7 +192,6 @@
                 }
             }
 
-            // 3. Renderiza o grid de 1 até total_pontos
             document.getElementById('loading').style.display = 'none';
             renderizarGrid(rifaAtual.total_pontos, numerosIndisponiveis);
 
@@ -201,7 +205,6 @@
         const grid = document.getElementById('gridNumeros');
         grid.innerHTML = '';
 
-        // Define quantos dígitos mostrar (ex: 100 -> 3 dígitos "001", 50 -> 2 dígitos "01")
         const digitos = String(totalPontos).length;
 
         for (let n = 1; n <= totalPontos; n++) {
