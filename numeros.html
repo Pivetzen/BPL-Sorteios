@@ -48,7 +48,7 @@
         
         /* Classes de Status */
         .status-livre { background-color: var(--livre); color: #064e3b; }
-        .status-reservado { background-color: var(--reservado); color: #713f12; }
+        .status-reservado { background-color: var(--reservado); color: #713f12; cursor: not-allowed; }
         .status-indisponivel { background-color: var(--indisponivel); color: #7f1d1d; cursor: not-allowed; }
         
         #loading { text-align: center; font-weight: bold; margin: 20px 0; color: #64748b; }
@@ -88,7 +88,7 @@
     <div class="grid-numeros" id="gridNumeros"></div>
 </div>
 
-<!-- Estrutura do Modal do WhatsApp -->
+<!-- Estrutura do Modal do WhatsApp / Aviso de Reserva -->
 <div class="modal-overlay" id="whatsappModal">
     <div class="modal-content">
         <div class="modal-text" id="modalMensagem">Número <strong>X</strong> selecionado!</div>
@@ -282,8 +282,6 @@
                         }
                     }
                 }
-            } else {
-                console.warn("Aviso ao ler aba Números:", resNumeros.reason);
             }
 
             loadingEl.style.display = 'none';
@@ -308,19 +306,26 @@
             card.classList.add('numero-card');
 
             const estaIndisponivel = indisponiveisPlanilhaSet.has(n);
-            const estaReservado = !estaIndisponivel && (reservasPlanilhaSet.has(n) || Boolean(reservasLocais[String(n)]));
+            const reservadoNaPlanilha = !estaIndisponivel && reservasPlanilhaSet.has(n);
+            const reservadoLocalmente = !estaIndisponivel && !reservadoNaPlanilha && Boolean(reservasLocais[String(n)]);
 
             if (estaIndisponivel) {
                 card.classList.add('status-indisponivel');
                 card.title = `Número ${numeroFormatado} indisponível`;
-            } else if (estaReservado) {
+            } else if (reservadoNaPlanilha) {
+                // Reservado na planilha: amarelo e bloqueado para outros usuários escolherem
                 card.classList.add('status-reservado');
-                card.title = `Número ${numeroFormatado} reservado temporariamente`;
-                card.addEventListener('click', () => selecionarOuAbrirModal(n, numeroFormatado, true));
+                card.title = `Número ${numeroFormatado} reservado (aguardando pagamento)`;
+                card.addEventListener('click', () => abrirModalBloqueado(numeroFormatado));
+            } else if (reservadoLocalmente) {
+                // Reservado no navegador atual
+                card.classList.add('status-reservado');
+                card.title = `Número ${numeroFormatado} reservado temporariamente por você`;
+                card.addEventListener('click', () => abrirModalReservaPropria(n, numeroFormatado));
             } else {
                 card.classList.add('status-livre');
                 card.title = `Número ${numeroFormatado} disponível`;
-                card.addEventListener('click', () => selecionarOuAbrirModal(n, numeroFormatado, false));
+                card.addEventListener('click', () => reservarNovoNumero(n, numeroFormatado));
             }
 
             card.innerText = numeroFormatado;
@@ -328,32 +333,37 @@
         }
     }
 
-    function selecionarOuAbrirModal(numeroInt, numeroFormatado, jaReservado) {
+    function abrirModalBloqueado(numeroFormatado) {
+        numeroSelecionadoAtual = null;
+        document.getElementById('modalMensagem').innerHTML = `Número <strong>${numeroFormatado}</strong> já reservado!`;
+        document.getElementById('modalAvisoReserva').innerHTML = `💛 Este número está <strong>reservado e aguardando confirmação de pagamento</strong>, portanto não pode ser escolhido no momento.`;
+        document.getElementById('btnLinkWhats').style.display = 'none';
+        document.getElementById('btnLiberarReserva').style.display = 'none';
+        document.getElementById('whatsappModal').style.display = 'flex';
+    }
+
+    function abrirModalReservaPropria(numeroInt, numeroFormatado) {
         numeroSelecionadoAtual = { numeroInt, numeroFormatado };
-
-        if (!jaReservado) {
-            salvarReservaLocal(rifaAtual.idNorm, numeroInt);
-            renderizarGrid();
-        }
-
-        document.getElementById('modalMensagem').innerHTML = `Número <strong>${numeroFormatado}</strong> reservado!`;
-        document.getElementById('modalAvisoReserva').innerHTML = `💛 O número <strong>${numeroFormatado}</strong> ficou <strong>amarelo (reservado temporário)</strong> até a confirmação do pagamento.`;
+        document.getElementById('modalMensagem').innerHTML = `Número <strong>${numeroFormatado}</strong> reservado por você!`;
+        document.getElementById('modalAvisoReserva').innerHTML = `💛 Número <strong>amarelo (reservado temporariamente)</strong> até a confirmação do pagamento.`;
 
         const textoMensagem = encodeURIComponent(
             `Olá! Reservei o número *${numeroFormatado}* da rifa *${rifaAtual.titulo}* (${rifaAtual.premio}) e quero confirmar o pagamento.`
         );
         const urlWhats = `https://api.whatsapp.com/send?phone=${rifaAtual.whatsapp}&text=${textoMensagem}`;
 
-        document.getElementById('btnLinkWhats').href = urlWhats;
+        const btnWhats = document.getElementById('btnLinkWhats');
+        btnWhats.href = urlWhats;
+        btnWhats.style.display = 'block';
 
-        const btnLiberar = document.getElementById('btnLiberarReserva');
-        if (reservasPlanilhaSet.has(numeroInt)) {
-            btnLiberar.style.display = 'none';
-        } else {
-            btnLiberar.style.display = 'inline-block';
-        }
-
+        document.getElementById('btnLiberarReserva').style.display = 'inline-block';
         document.getElementById('whatsappModal').style.display = 'flex';
+    }
+
+    function reservarNovoNumero(numeroInt, numeroFormatado) {
+        salvarReservaLocal(rifaAtual.idNorm, numeroInt);
+        renderizarGrid();
+        abrirModalReservaPropria(numeroInt, numeroFormatado);
     }
 
     function liberarReservaAtual(event) {
