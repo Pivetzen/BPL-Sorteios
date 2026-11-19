@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-PT">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -70,6 +70,7 @@
         .btn-action:active { transform: scale(0.98); }
 
         #loading { text-align: center; padding: 40px 10px; font-weight: bold; color: #78350f; }
+        .btn-retry { display: inline-block; margin-top: 12px; background: var(--primary); color: #fff; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-size: 0.9rem; cursor: pointer; border: none; font-weight: bold; }
         .hidden { display: none !important; }
 
         @media (max-width: 500px) {
@@ -130,7 +131,7 @@
 </div>
 
 <script>
-    const URL_PLANILHA_RIFAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=0&single=true&output=csv';[cite: 6]
+    const URL_PLANILHA_RIFAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=0&single=true&output=csv';
 
     function parseCSVLine(text, separator) {
         const result = [];
@@ -155,18 +156,52 @@
         return String(valor || '').replace(/^"|"$/g, '').trim().toLowerCase();
     }
 
-    async function iniciar() {
+    function mostrarErro(mensagem) {
+        const loadingEl = document.getElementById('loading');
+        loadingEl.classList.remove('hidden');
+        loadingEl.innerHTML = `
+            <div style="color:#ef4444;">${mensagem}</div>
+            <button type="button" class="btn-retry" onclick="iniciar()">Tentar novamente</button>
+        `;
+    }
+
+    async function fetchCSVComTimeout(url, timeoutMs = 12000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
         try {
-            const sepQuery = URL_PLANILHA_RIFAS.includes('?') ? '&' : '?';
-            const response = await fetch(`${URL_PLANILHA_RIFAS}${sepQuery}t=${new Date().getTime()}`);
-            const csvText = await response.text();
-            
-            if (csvText.includes('<!doctype html>') || csvText.includes('<html')) {
-                document.getElementById('loading').innerHTML = "<span style='color:#ef4444;'>Erro: Verifique o link CSV da aba Rifas.</span>";
+            const sep = url.includes('?') ? '&' : '?';
+            const response = await fetch(`${url}${sep}t=${new Date().getTime()}`, {
+                cache: 'no-store',
+                signal: controller.signal
+            });
+            if (!response.ok) {
+                throw new Error(`Falha HTTP ${response.status}`);
+            }
+            const texto = await response.text();
+            if (!texto || texto.includes('<!doctype html>') || texto.includes('<html')) {
+                throw new Error('Conteúdo HTML devolvido em vez de CSV');
+            }
+            return texto;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    async function iniciar() {
+        const loadingEl = document.getElementById('loading');
+        loadingEl.classList.remove('hidden');
+        loadingEl.innerHTML = 'Carregando campanhas...';
+        document.getElementById('telaVitrine').classList.add('hidden');
+        document.getElementById('telaDetalhes').classList.add('hidden');
+
+        try {
+            const csvText = await fetchCSVComTimeout(URL_PLANILHA_RIFAS);
+            const linhas = csvText.split(/\r?\n/).filter(l => l.trim() !== '');
+            if (linhas.length <= 1) {
+                mostrarErro('Nenhuma campanha encontrada na folha.');
                 return;
             }
 
-            const linhas = csvText.split(/\r?\n/).filter(l => l.trim() !== '');
             const separador = csvText.includes(';') ? ';' : ',';
             const rifasAtivas = [];
 
@@ -179,25 +214,24 @@
                     rifasAtivas.push({
                         id: cols[0],
                         idNormalizado: normalizarId(cols[0]),
-                        titulo: cols[2],
-                        subtitulo: cols[3],
-                        premio: cols[4],
-                        img_campanha: cols[5],
-                        img_premio: cols[6],
-                        descricao: cols[7],
-                        valor: cols[8],
-                        data_sorteio: cols[9],
-                        total_pontos: cols[10],
-                        whatsapp: cols[11]
+                        titulo: cols[2] || 'Rifa Solidária',
+                        subtitulo: cols[3] || '',
+                        premio: cols[4] || '',
+                        img_campanha: cols[5] || '',
+                        img_premio: cols[6] || '',
+                        descricao: cols[7] || '',
+                        valor: cols[8] || '',
+                        data_sorteio: cols[9] || 'A definir',
+                        total_pontos: cols[10] || '0',
+                        whatsapp: cols[11] || ''
                     });
                 }
             }
 
-            document.getElementById('loading').classList.add('hidden');
+            loadingEl.classList.add('hidden');
 
             if (rifasAtivas.length === 0) {
-                document.getElementById('loading').classList.remove('hidden');
-                document.getElementById('loading').innerText = "Nenhuma rifa ativa no momento.";
+                mostrarErro('Nenhuma rifa ativa no momento.');
                 return;
             }
 
@@ -210,8 +244,7 @@
                     exibirDetalhes(rifaEncontrada, rifasAtivas.length > 1);
                     return;
                 } else {
-                    document.getElementById('loading').classList.remove('hidden');
-                    document.getElementById('loading').innerHTML = `<span style='color:#ef4444;'>Rifa "${urlParams.get('rifa')}" não encontrada ou inativa.</span>`;
+                    mostrarErro(`Rifa "${urlParams.get('rifa')}" não encontrada ou inativa.`);
                     return;
                 }
             }
@@ -223,8 +256,8 @@
             }
 
         } catch (error) {
-            console.error(error);
-            document.getElementById('loading').innerText = "Erro ao carregar as rifas.";
+            console.error('Erro ao carregar as rifas:', error);
+            mostrarErro('Não foi possível carregar as campanhas a partir da folha. Verifique a ligação ou tente novamente.');
         }
     }
 
@@ -291,8 +324,7 @@
         document.getElementById('rifaTotalPontos').innerText = rifa.total_pontos;
 
         const btnNumeros = document.getElementById('btnEscolherNumeros');
-        const destinoNumeros = `numeros.html?rifa=${encodeURIComponent(rifa.id)}`;
-        btnNumeros.setAttribute('href', destinoNumeros);
+        btnNumeros.setAttribute('href', `numeros.html?rifa=${encodeURIComponent(rifa.id)}`);
 
         document.getElementById('telaDetalhes').classList.remove('hidden');
     }
