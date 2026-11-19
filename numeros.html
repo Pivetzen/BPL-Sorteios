@@ -102,10 +102,9 @@
 </div>
 
 <script>
-    const URL_PLANILHA_RIFAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=0&single=true&output=csv';[cite: 7]
-    const URL_PLANILHA_NUMEROS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=1215078428&single=true&output=csv';[cite: 7]
+    const URL_PLANILHA_RIFAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=0&single=true&output=csv';
+    const URL_PLANILHA_NUMEROS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS2RUROIb4Y_l4d1ASyHS0FVUQ99JRGlsWQL9g6f2xEAYbJDAUuOuPE9EuY5pOGvQkC3B0uzmvSYM0O/pub?gid=1215078428&single=true&output=csv';
 
-    // Tempo de validade da reserva temporária local (em horas)
     const HORAS_RESERVA_LOCAL = 24;
 
     let rifaAtual = {
@@ -150,16 +149,20 @@
 
     function obterReservasLocais(rifaIdNorm) {
         try {
+            if (!window.localStorage) return {};
             const raw = localStorage.getItem(getStorageKey(rifaIdNorm));
             if (!raw) return {};
             const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return {};
+
             const agora = Date.now();
             const limiteMs = HORAS_RESERVA_LOCAL * 60 * 60 * 1000;
             const validas = {};
 
             for (const [num, timestamp] of Object.entries(parsed)) {
-                if (agora - Number(timestamp) < limiteMs) {
-                    validas[num] = Number(timestamp);
+                const ts = Number(timestamp);
+                if (!isNaN(ts) && agora - ts < limiteMs) {
+                    validas[num] = ts;
                 }
             }
 
@@ -171,18 +174,42 @@
     }
 
     function salvarReservaLocal(rifaIdNorm, numeroInt) {
-        const atuais = obterReservasLocais(rifaIdNorm);
-        atuais[String(numeroInt)] = Date.now();
-        localStorage.setItem(getStorageKey(rifaIdNorm), JSON.stringify(atuais));
+        try {
+            if (!window.localStorage) return;
+            const atuais = obterReservasLocais(rifaIdNorm);
+            atuais[String(numeroInt)] = Date.now();
+            localStorage.setItem(getStorageKey(rifaIdNorm), JSON.stringify(atuais));
+        } catch (e) {
+            console.warn("Não foi possível salvar reserva local:", e);
+        }
     }
 
     function removerReservaLocal(rifaIdNorm, numeroInt) {
-        const atuais = obterReservasLocais(rifaIdNorm);
-        delete atuais[String(numeroInt)];
-        localStorage.setItem(getStorageKey(rifaIdNorm), JSON.stringify(atuais));
+        try {
+            if (!window.localStorage) return;
+            const atuais = obterReservasLocais(rifaIdNorm);
+            delete atuais[String(numeroInt)];
+            localStorage.setItem(getStorageKey(rifaIdNorm), JSON.stringify(atuais));
+        } catch (e) {
+            console.warn("Não foi possível remover reserva local:", e);
+        }
+    }
+
+    async function fetchCSVSeguro(url) {
+        const sep = url.includes('?') ? '&' : '?';
+        const resp = await fetch(`${url}${sep}t=${new Date().getTime()}`, { cache: 'no-store' });
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}`);
+        }
+        const texto = await resp.text();
+        if (texto.includes('<!doctype html>') || texto.includes('<html')) {
+            throw new Error('Resposta HTML em vez de CSV');
+        }
+        return texto;
     }
 
     async function carregarCartela() {
+        const loadingEl = document.getElementById('loading');
         const urlParams = new URLSearchParams(window.location.search);
         const rifaIdRaw = urlParams.get('rifa');
         const rifaId = normalizarId(rifaIdRaw);
@@ -195,18 +222,17 @@
         document.getElementById('btnVoltar').setAttribute('href', `index.html?rifa=${encodeURIComponent(rifaIdRaw)}`);
 
         try {
-            const timestamp = new Date().getTime();
-            const sepRifasQuery = URL_PLANILHA_RIFAS.includes('?') ? '&' : '?';
-            const sepNumQuery = URL_PLANILHA_NUMEROS.includes('?') ? '&' : '?';
-
-            const [resRifas, resNumeros] = await Promise.all([
-                fetch(`${URL_PLANILHA_RIFAS}${sepRifasQuery}t=${timestamp}`),
-                fetch(`${URL_PLANILHA_NUMEROS}${sepNumQuery}t=${timestamp}`)
+            const [resRifas, resNumeros] = await Promise.allSettled([
+                fetchCSVSeguro(URL_PLANILHA_RIFAS),
+                fetchCSVSeguro(URL_PLANILHA_NUMEROS)
             ]);
 
-            const csvRifas = await resRifas.text();
-            const csvNumeros = await resNumeros.text();
+            if (resRifas.status !== 'fulfilled') {
+                loadingEl.innerHTML = "<span style='color:#ef4444;'>Erro ao carregar a aba Rifas da planilha. Verifique a publicação como CSV.</span>";
+                return;
+            }
 
+            const csvRifas = resRifas.value;
             const linhasRifas = csvRifas.split(/\r?\n/).filter(l => l.trim() !== '');
             const sepRifas = csvRifas.includes(';') ? ';' : ',';
             let encontrouRifa = false;
@@ -220,7 +246,7 @@
                         titulo: cols[2] || 'Rifa',
                         premio: cols[4] || '',
                         total_pontos: parseInt(cols[10], 10) || 100,
-                        whatsapp: (cols[11] || '').replace(/\D/g, '')
+                        whatsapp: (cols[11] || '').replace(/\D/g, '') || '5585986000477'
                     };
                     encontrouRifa = true;
                     break;
@@ -228,7 +254,7 @@
             }
 
             if (!encontrouRifa) {
-                document.getElementById('loading').innerHTML = "<span style='color:#ef4444;'>Esta rifa não está ativa ou não foi encontrada.</span>";
+                loadingEl.innerHTML = "<span style='color:#ef4444;'>Esta rifa não está ativa ou não foi encontrada.</span>";
                 return;
             }
 
@@ -237,30 +263,35 @@
             reservasPlanilhaSet = new Set();
             indisponiveisPlanilhaSet = new Set();
 
-            const linhasNumeros = csvNumeros.split(/\r?\n/).filter(l => l.trim() !== '');
-            const sepNumeros = csvNumeros.includes(';') ? ';' : ',';
+            if (resNumeros.status === 'fulfilled') {
+                const csvNumeros = resNumeros.value;
+                const linhasNumeros = csvNumeros.split(/\r?\n/).filter(l => l.trim() !== '');
+                const sepNumeros = csvNumeros.includes(';') ? ';' : ',';
 
-            for (let i = 1; i < linhasNumeros.length; i++) {
-                const cols = parseCSVLine(linhasNumeros[i], sepNumeros).map(c => c.replace(/^"|"$/g, '').trim());
-                const idRifaLinha = normalizarId(cols[0]);
-                const numLinha = parseInt(cols[1], 10);
-                const statusLinha = (cols[2] || '').toLowerCase();
+                for (let i = 1; i < linhasNumeros.length; i++) {
+                    const cols = parseCSVLine(linhasNumeros[i], sepNumeros).map(c => c.replace(/^"|"$/g, '').trim());
+                    const idRifaLinha = normalizarId(cols[0]);
+                    const numLinha = parseInt(cols[1], 10);
+                    const statusLinha = (cols[2] || '').toLowerCase();
 
-                if (idRifaLinha === rifaId && !isNaN(numLinha)) {
-                    if (statusLinha === 'reservado' || statusLinha === 'reservado temporario' || statusLinha === 'reservado temporário') {
-                        reservasPlanilhaSet.add(numLinha);
-                    } else if (statusLinha !== '' && statusLinha !== 'livre' && statusLinha !== 'disponivel' && statusLinha !== 'disponível') {
-                        indisponiveisPlanilhaSet.add(numLinha);
+                    if (idRifaLinha === rifaId && !isNaN(numLinha)) {
+                        if (statusLinha === 'reservado' || statusLinha === 'reservado temporario' || statusLinha === 'reservado temporário') {
+                            reservasPlanilhaSet.add(numLinha);
+                        } else if (statusLinha !== '' && statusLinha !== 'livre' && statusLinha !== 'disponivel' && statusLinha !== 'disponível') {
+                            indisponiveisPlanilhaSet.add(numLinha);
+                        }
                     }
                 }
+            } else {
+                console.warn("Aviso ao ler aba Números:", resNumeros.reason);
             }
 
-            document.getElementById('loading').style.display = 'none';
+            loadingEl.style.display = 'none';
             renderizarGrid();
 
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
-            document.getElementById('loading').innerText = "Erro ao carregar os números da planilha.";
+            loadingEl.innerHTML = "<span style='color:#ef4444;'>Erro ao carregar os números da planilha.</span>";
         }
     }
 
@@ -300,7 +331,6 @@
     function selecionarOuAbrirModal(numeroInt, numeroFormatado, jaReservado) {
         numeroSelecionadoAtual = { numeroInt, numeroFormatado };
 
-        // Marca o quadrado como reservado temporário (amarelo) ao selecionar
         if (!jaReservado) {
             salvarReservaLocal(rifaAtual.idNorm, numeroInt);
             renderizarGrid();
@@ -316,7 +346,6 @@
 
         document.getElementById('btnLinkWhats').href = urlWhats;
 
-        // Exibe opção de cancelar reserva local apenas se não estiver bloqueado como "reservado" na planilha
         const btnLiberar = document.getElementById('btnLiberarReserva');
         if (reservasPlanilhaSet.has(numeroInt)) {
             btnLiberar.style.display = 'none';
